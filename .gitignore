@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*.scad
+*.stl
+test_*.scad
+test_*.stl
