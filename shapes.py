@@ -2,7 +2,6 @@ from solid import *
 from solid.utils import *
 from textutils import scad_text
 
-# Helper to create ball, star, bell or custom SVG (future) base
 def base_shape(shape, size, thickness):
     if shape == "ball":
         return cylinder(d=size, h=thickness, center=False)
@@ -14,7 +13,6 @@ def base_shape(shape, size, thickness):
         raise ValueError("Unknown shape")
 
 def star_shape(size, thickness):
-    # Approximate a 5-point star with 2D polygon, then extrude
     import math
     r_outer = size / 2
     r_inner = r_outer * 0.4
@@ -27,7 +25,6 @@ def star_shape(size, thickness):
     return linear_extrude(height=thickness)(polygon(verts))
 
 def bell_shape(size, thickness):
-    # Simplified bell: wide bottom, arch top, extrude
     h = size * 0.9
     w = size * 0.80
     path = [
@@ -42,36 +39,54 @@ def create_shape_with_text_and_morse(
     color_split, add_loop
 ):
     scad_objs = []
-    # All primitives start at z = 0, base at z=0, everything else "stacked" upwards
 
-    # Base shape (disc/whatever), bottom at z=0
+    # Base ornament
     scad_objs.append(base_shape(shape, size, thickness))
-
-    # Optional filament color split: add 0.2mm disc above base, for filament change
     z_base = thickness
     if color_split:
-        scad_objs.append(translate([0, 0, thickness])(base_shape(shape, size, 0.2)))
+        scad_objs.append(translate([0, 0, z_base])(base_shape(shape, size, 0.2)))
         z_base += 0.2
 
-    # Name text: centered horizontally, raised exactly above base ("face" of ornament: z=z_base)
-    # Conservative size so it fits (0.33 of diameter)
-    text_size = size * 0.33
-    text_y = size * 0.09  # Slightly above center-mass, to allow Morse below
+    safe_edge = size * 0.09  # Keep text/Morse this far from the edge
+    max_text_width = size * 0.70  # 70% of ball width max
+    max_morse_width = size * 0.80
+
+    # TEXT: auto-scale text size to fit width (crude, but practical)
+    # Empirical: OpenSCAD's text string is about 0.6 * len(text) * fontsize wide for most fonts.
+    text_size_guess = max_text_width / max(len(name), 1) / 0.6
+    text_size = min(text_size_guess, size * 0.24)  # never exceed 24% of ball size as font height
+
+    text_y = size / 2 - safe_edge - text_size/2  # Place lower than the top by safe_edge
     scad_objs.append(
-        translate([0, text_y, z_base])(
+        translate([0, text_y-size/2, z_base])(
             scad_text(name, size=text_size, height=text_height)
         )
     )
 
-    # Morse code: build elements in a row below text (below center), raised same as text
-    morse_y = text_y - text_size * 0.55 - morse_dot_size * 0.5
-    x_cursor = 0
-    dot_r = morse_dot_size / 2
+    # MORSE: scale so full string fits, is below text but inside the ball.
+    num_morse = sum(1 for c in morse if c in ".-")
     dash_len = morse_dash_length
-    dash_ht = morse_dot_size
-    spacing = morse_dot_size * 1.7
+    dot_d = morse_dot_size
+    spacing = dot_d * 1.4
 
-    el_lengths = [(dash_len if c == "-" else morse_dot_size) for c in morse if c in ".-"]
+    # Calculate total Morse width, scale so it fits
+    morse_unit_widths = [(dash_len if c == "-" else dot_d) for c in morse if c in ".-"]
+    morse_total_len = sum(morse_unit_widths) + spacing * (num_morse - 1 if num_morse > 0 else 0)
+
+    # If Morse line too long, reduce dash/dot size
+    if morse_total_len > max_morse_width:
+        scale_factor = max_morse_width / morse_total_len
+        dot_d *= scale_factor
+        dash_len *= scale_factor
+        spacing *= scale_factor
+        morse_total_len = sum([(dash_len if c == "-" else dot_d) for c in morse if c in ".-"]) + spacing * (num_morse - 1 if num_morse > 0 else 0)
+
+    morse_y = text_y - text_size / 2 - dot_d / 1.4  # Place Morse snugly below text
+    x_cursor = 0
+    dot_r = dot_d / 2
+    dash_ht = dot_d
+
+    el_lengths = [(dash_len if c == "-" else dot_d) for c in morse if c in ".-"]
     total_len = sum(el_lengths) + spacing * (len(el_lengths) - 1)
     x_start = -total_len / 2
 
@@ -79,32 +94,36 @@ def create_shape_with_text_and_morse(
     for c in morse:
         if c == ".":
             morse_objs.append(
-                translate([x_start + x_cursor + dot_r, morse_y, z_base])(
-                    cylinder(d=morse_dot_size, h=morse_height)
+                translate([x_start + x_cursor + dot_r, morse_y-size/2, z_base])(
+                    cylinder(d=dot_d, h=morse_height)
                 )
             )
-            x_cursor += morse_dot_size + spacing
+            x_cursor += dot_d + spacing
         elif c == "-":
             morse_objs.append(
-                translate([x_start + x_cursor + dash_len / 2, morse_y, z_base])(
+                translate([x_start + x_cursor + dash_len / 2, morse_y-size/2, z_base])(
                     cube([dash_len, dash_ht, morse_height], center=True)
                 )
             )
             x_cursor += dash_len + spacing
         elif c == " ":
-            x_cursor += spacing * 1.5  # Bigger space between words
+            x_cursor += spacing * 2  # Bigger space between words
+
     scad_objs += morse_objs
 
-    # Add top loop for string: at topmost position, centered, flush with top edge
+    # Add top loop (ensure connection: bottom of loop at y=size/2, top edge of ball)
     if add_loop:
-        loop_center_y = size / 2 + 4  # 4mm above ornament edge
-        loop_z = z_base / 2
-        loop = translate([0, loop_center_y, loop_z])(
-            cylinder(d=8, h=z_base)
+        loop_r = 4
+        loop_d = 8
+        loop_z = z_base / 2  # Match ornament height
+        # Move it so bottom sits flush at y=size/2
+        scad_objs.append(
+            translate([0, size/2 - loop_r, loop_z])(
+                cylinder(d=loop_d, h=z_base)
+            )
+            - translate([0, size/2 - loop_r, loop_z])(
+                cylinder(d=loop_r, h=z_base + 0.1)
+            )
         )
-        hole = translate([0, loop_center_y, loop_z])(
-            cylinder(d=4, h=z_base + 0.01)
-        )
-        scad_objs.append(loop - hole)
 
     return union()(scad_objs)
