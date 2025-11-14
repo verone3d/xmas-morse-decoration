@@ -1,6 +1,7 @@
 import argparse
 from shapes import create_shape_with_text_and_morse
 from morse import text_to_morse
+from solid import scad_render_to_file
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Generate a 3D printable Christmas ornament with a name and its Morse code.")
@@ -34,8 +35,10 @@ def main():
         color_split=args.color_split,
         add_loop=args.add_loop
     )
-    model.save_as_stl(args.output)
-    print(f"Saved ornament as {args.output}")
+    scad_filename = args.output.replace('.stl', '.scad')
+    scad_render_to_file(model, scad_filename)
+    print(f"Saved SCAD file as {scad_filename}")
+    print("Open this file in OpenSCAD and export as STL after rendering.")
 
 if __name__ == "__main__":
     main()
