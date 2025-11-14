@@ -38,6 +38,29 @@ def create_shape_with_text_and_morse(
     morse_height, morse_dot_size, morse_dash_length,
     color_split, add_loop
 ):
+    """
+    Create a 3D ornament shape with text and Morse code.
+    
+    Ensures all text and Morse elements stay within the circular boundary
+    by calculating available width at each Y position and scaling elements
+    appropriately. Text and Morse are vertically centered as a group.
+    
+    Args:
+        shape: Shape type ('ball', 'star', or 'bell')
+        name: Text to display on ornament
+        morse: Morse code representation of the name
+        size: Ornament diameter/size in mm
+        thickness: Base thickness in mm
+        text_height: Height of raised text in mm
+        morse_height: Height of raised Morse code in mm
+        morse_dot_size: Diameter of Morse dots in mm
+        morse_dash_length: Length of Morse dashes in mm
+        color_split: Whether to add separation layer for multicolor printing
+        add_loop: Whether to add hanging loop at top
+        
+    Returns:
+        SolidPython union object representing the complete ornament
+    """
     import math
     scad_objs = []
 
